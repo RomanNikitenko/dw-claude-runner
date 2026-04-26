@@ -1,0 +1,32 @@
+#
+# This file was generated using AI assistance (Cursor AI)
+# and reviewed by the maintainers.
+#
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: DEVWORKSPACE_NAME
+  namespace: DEVWORKSPACE_NS
+spec:
+  started: true
+  routingClass: che
+  template:
+    components:
+      - name: dev
+        container:
+          image: CONTAINER_IMAGE
+          args: ['tail', '-f', '/dev/null']
+          memoryLimit: 8Gi
+          memoryRequest: 512Mi
+          cpuRequest: 500m
+          cpuLimit: 2000m
+        attributes:
+          controller.devfile.io/merge-contribution: true
+    projects:
+      - name: PROJECT_NAME
+        git:
+          remotes:
+            origin: PROJECT_URL
+  contributions:
+    - name: editor-definition-component
+      uri: EDITOR_DEFINITION
