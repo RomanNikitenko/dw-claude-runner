@@ -102,7 +102,7 @@ fi
 . settings/settings.env
 
 DEVWORKSPACE_NS=$(oc project -q 2>/dev/null)
-PROJECT_NAME=$(basename "${PROJECT_URL}" .git | tr -d '"')
+PROJECT_NAME=$(basename "$(echo "${PROJECT_URL}" | tr -d '"')" .git)
 
 # Validate critical variables
 if [ -z "${DEVWORKSPACE_NS}" ]; then
