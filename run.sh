@@ -60,7 +60,7 @@ resolve_devworkspace_pod() {
     log "Could not find pod/container matching ${DEVWORKSPACE_NAME}"
     return 1
   fi
-  log "Found container ${mainContainerName} in pod ${podName}"
+  debug "Found container ${mainContainerName} in pod ${podName}"
   return 0
 }
 
@@ -78,20 +78,23 @@ echo -e "${GREEN}oc, jq: OK${NC}"
 
 # Cluster connection
 echo -e "\n${BLUE}Checking cluster connection...${NC}"
-current_cluster=$(oc config current-context 2>/dev/null || echo "unknown")
-eval oc whoami ${QUIET}
-if [ $? -ne 0 ]; then
-  echo -e "${YELLOW}Not connected.${NC} Login to cluster ${PURPLE}${current_cluster}${NC}?"
-  while true; do
-    read -p "(y/n)? : " yn
-    case $yn in
-      [Yy]*) oc login --web; break ;;
-      [Nn]*) exit ;;
-      *) echo "Please answer y or n." ;;
-    esac
-  done
-else
+if oc whoami &>/dev/null; then
   echo -e "${GREEN}Connected to cluster${NC}"
+else
+  if [ -t 0 ]; then
+    echo -e "${YELLOW}Not connected.${NC} Login to cluster?"
+    while true; do
+      read -p "(y/n)? : " yn
+      case $yn in
+        [Yy]*) oc login --web; break ;;
+        [Nn]*) exit ;;
+        *) echo "Please answer y or n." ;;
+      esac
+    done
+  else
+    echo -e "${RED}Not connected to cluster. Run 'oc login' first.${NC}"
+    exit 1
+  fi
 fi
 
 # ── Load settings ──
@@ -144,10 +147,12 @@ while [ "${state}" != "Running" ] && [ ${count} -lt ${TIMEOUT} ]; do
   state=$(oc get dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} -o 'jsonpath={.status.phase}' 2>/dev/null)
   if [ "${state}" == "Failed" ]; then
     echo -e "${RED}Workspace failed to start${NC}"
-    echo -e "${YELLOW}DevWorkspace status:${NC}"
-    oc get dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} -o json | jq '.status'
-    echo -e "${YELLOW}Pod events:${NC}"
-    oc get events -n ${DEVWORKSPACE_NS} --sort-by='.lastTimestamp' 2>/dev/null | tail -20
+    if [ ${DEBUG} -eq 1 ]; then
+      echo -e "${YELLOW}DevWorkspace status:${NC}"
+      oc get dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} -o json | jq '.status'
+      echo -e "${YELLOW}Pod events:${NC}"
+      oc get events -n ${DEVWORKSPACE_NS} --sort-by='.lastTimestamp' 2>/dev/null | tail -20
+    fi
     eval "oc delete dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} ${QUIET}"
     rm -f ${TMP_DEVWORKSPACE}
     exit 1
@@ -169,13 +174,15 @@ echo -e "${GREEN}Workspace is Running${NC} (after ${count}s)"
 
 # ── Inspect workspace ──
 
-echo -e "\n${BLUE}Workspace details:${NC}"
-echo -e "  ${YELLOW}Pods:${NC}"
-oc get pods -n ${DEVWORKSPACE_NS} -l "controller.devfile.io/devworkspace_name=${DEVWORKSPACE_NAME}" -o wide 2>/dev/null
-echo -e "  ${YELLOW}Containers in pod:${NC}"
-oc get pods -n ${DEVWORKSPACE_NS} -l "controller.devfile.io/devworkspace_name=${DEVWORKSPACE_NAME}" -o jsonpath='{range .items[0].spec.containers[*]}  - {.name} (image: {.image}){"\n"}{end}' 2>/dev/null
-echo -e "  ${YELLOW}DevWorkspace components:${NC}"
-oc get dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} -o json | jq -r '.spec.template.components[] | "  - \(.name)" + if .container then " (image: \(.container.image))" else "" end' 2>/dev/null
+if [ ${DEBUG} -eq 1 ]; then
+  echo -e "\n${BLUE}Workspace details:${NC}"
+  echo -e "  ${YELLOW}Pods:${NC}"
+  oc get pods -n ${DEVWORKSPACE_NS} -l "controller.devfile.io/devworkspace_name=${DEVWORKSPACE_NAME}" -o wide 2>/dev/null
+  echo -e "  ${YELLOW}Containers in pod:${NC}"
+  oc get pods -n ${DEVWORKSPACE_NS} -l "controller.devfile.io/devworkspace_name=${DEVWORKSPACE_NAME}" -o jsonpath='{range .items[0].spec.containers[*]}  - {.name} (image: {.image}){"\n"}{end}' 2>/dev/null
+  echo -e "  ${YELLOW}DevWorkspace components:${NC}"
+  oc get dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} -o json | jq -r '.spec.template.components[] | "  - \(.name)" + if .container then " (image: \(.container.image))" else "" end' 2>/dev/null
+fi
 
 # ── Validate workspace ──
 
@@ -237,13 +244,15 @@ INSTALL_EOF
 
 INSTALL_CMD="${INSTALL_CMD//__CLAUDE_VERSION__/${CLAUDE_VERSION}}"
 
-echo -e "  Executing install in pod ${podName}, container ${mainContainerName}..."
+debug "  Executing install in pod ${podName}, container ${mainContainerName}..."
 oc exec -n ${DEVWORKSPACE_NS} ${podName} -c ${mainContainerName} -- bash -c "${INSTALL_CMD}" 2>&1
 INSTALL_EXIT=$?
 if [ ${INSTALL_EXIT} -ne 0 ]; then
   echo -e "${RED}Failed to install Claude Code (exit: ${INSTALL_EXIT})${NC}"
-  echo -e "${YELLOW}Container status:${NC}"
-  oc get pod ${podName} -n ${DEVWORKSPACE_NS} -o json | jq '.status.containerStatuses[] | select(.name=="'${mainContainerName}'") | {ready, state}' 2>/dev/null
+  if [ ${DEBUG} -eq 1 ]; then
+    echo -e "${YELLOW}Container status:${NC}"
+    oc get pod ${podName} -n ${DEVWORKSPACE_NS} -o json | jq '.status.containerStatuses[] | select(.name=="'${mainContainerName}'") | {ready, state}' 2>/dev/null
+  fi
   eval "oc delete dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} ${QUIET}"
   rm -f ${TMP_DEVWORKSPACE}
   exit 1
