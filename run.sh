@@ -49,18 +49,28 @@ debug() {
 }
 
 resolve_devworkspace_pod() {
-  podNameAndDWName=$(oc get pods -n ${DEVWORKSPACE_NS} -o 'jsonpath={range .items[*]}{.metadata.name}{","}{.metadata.labels.controller\.devfile\.io/devworkspace_name}{"\n"}{end}')
+  podNameAndDWName=$(oc get pods -n ${DEVWORKSPACE_NS} --field-selector=status.phase=Running -o 'jsonpath={range .items[*]}{.metadata.name}{","}{.metadata.labels.controller\.devfile\.io/devworkspace_name}{"\n"}{end}')
   debug "podNameAndDWName: ${podNameAndDWName}"
   podName=$(echo ${podNameAndDWName} | grep ${DEVWORKSPACE_NAME} | cut -d, -f1)
   debug "podName: ${podName}"
 
-  mainContainerName=$(oc get devworkspace -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} -o json | jq -r '[.spec.template.components[] | select(.container) | .name] | first')
-  debug "mainContainerName: ${mainContainerName}"
-  if [ -z "${podName}" ] || [ -z "${mainContainerName}" ]; then
-    log "Could not find pod/container matching ${DEVWORKSPACE_NAME}"
+  if [ -z "${podName}" ]; then
+    log "Could not find pod matching ${DEVWORKSPACE_NAME}"
     return 1
   fi
-  debug "Found container ${mainContainerName} in pod ${podName}"
+
+  # Resolve the main container from the actual pod (excluding the che-gateway
+  # sidecar) rather than from the DW spec, to handle any naming differences.
+  mainContainerName=$(oc get pod -n ${DEVWORKSPACE_NS} ${podName} -o json | jq -r '[.spec.containers[] | select(.name != "che-gateway") | .name] | first')
+  debug "mainContainerName: ${mainContainerName}"
+
+  if [ -z "${mainContainerName}" ] || [ "${mainContainerName}" == "null" ]; then
+    log "Could not find main container in pod ${podName}"
+    debug "All containers:"
+    oc get pod -n ${DEVWORKSPACE_NS} ${podName} -o json | jq -r '.spec.containers[].name' 2>/dev/null
+    return 1
+  fi
+  log "  Resolved pod=${podName}, container=${mainContainerName}"
   return 0
 }
 
