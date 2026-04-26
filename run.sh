@@ -101,8 +101,26 @@ fi
 
 . settings/settings.env
 
-DEVWORKSPACE_NS=$(oc project -q)
+DEVWORKSPACE_NS=$(oc project -q 2>/dev/null)
 PROJECT_NAME=$(basename "${PROJECT_URL}" .git | tr -d '"')
+
+# Validate critical variables
+if [ -z "${DEVWORKSPACE_NS}" ]; then
+  echo -e "${RED}Failed to determine OpenShift namespace${NC}"
+  exit 1
+fi
+if [ -z "${PROJECT_NAME}" ]; then
+  echo -e "${RED}Failed to determine project name from PROJECT_URL${NC}"
+  exit 1
+fi
+if [ -z "${TARGET_REPO}" ]; then
+  echo -e "${RED}TARGET_REPO is not set${NC}"
+  exit 1
+fi
+if [ -z "${SKILL_PATH}" ]; then
+  echo -e "${RED}SKILL_PATH is not set${NC}"
+  exit 1
+fi
 
 echo -e "\n${BLUE}Configuration:${NC}"
 echo -e "  Workspace:  ${DEVWORKSPACE_NAME}"
