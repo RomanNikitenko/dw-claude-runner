@@ -246,6 +246,30 @@ elif [ -z "${GITHUB_TOKEN:-}" ]; then
   echo "WARNING: GITHUB_TOKEN not found (no env var, no /.git-credentials/credentials)"
 fi
 
+# Install jq (not included in minimal Node.js images)
+if ! command -v jq &>/dev/null; then
+  echo "Installing jq..."
+  curl -fsSL -o "${INSTALL_DIR}/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"
+  chmod +x "${INSTALL_DIR}/jq"
+  echo "jq installed"
+fi
+
+# Install git-subtree (not included in minimal git packages)
+GIT_EXEC_PATH=$(git --exec-path)
+if [ ! -f "${GIT_EXEC_PATH}/git-subtree" ]; then
+  echo "Installing git-subtree..."
+  GIT_VERSION=$(git --version | cut -d' ' -f3)
+  SUBTREE_URL="https://raw.githubusercontent.com/git/git/v${GIT_VERSION}/contrib/subtree/git-subtree.sh"
+  if curl -fsSL -o "${GIT_EXEC_PATH}/git-subtree" "${SUBTREE_URL}" 2>/dev/null; then
+    chmod +x "${GIT_EXEC_PATH}/git-subtree"
+  else
+    # Fallback: place in user-local bin as git-subtree wrapper
+    curl -fsSL -o "${INSTALL_DIR}/git-subtree" "${SUBTREE_URL}"
+    chmod +x "${INSTALL_DIR}/git-subtree"
+  fi
+  echo "git-subtree installed"
+fi
+
 # Install gh CLI (not included in minimal Node.js images)
 if ! command -v gh &>/dev/null; then
   echo "Installing gh CLI..."
