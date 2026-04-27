@@ -31,8 +31,8 @@ ISSUE_REF=https://github.com/owner/repo/issues/123 ./run.sh -d
 
 | Flag | Description |
 |------|-------------|
-| `-v` | Verbose — show progress messages |
-| `-d` | Debug — verbose + internal details (pod resolution, generated YAML) |
+| `-v` | Verbose — progress messages and final Claude answer |
+| `-d` | Debug — verbose + stream Claude actions in real-time |
 | `-h` | Show help |
 
 ## Configuration

@@ -21,8 +21,8 @@ while getopts "vdh" o; do
     d) DEBUG=1; VERBOSE=1; echo "Debug mode (verbose)." ;;
     h)
       echo "Usage: $0 [-v] [-d] [-h]"
-      echo "  -v  Verbose — show progress messages"
-      echo "  -d  Debug — verbose + internal details"
+      echo "  -v  Verbose — show progress messages and final Claude answer"
+      echo "  -d  Debug — verbose + stream Claude actions in real-time"
       echo "  -h  Show this help"
       echo ""
       echo "Environment variables:"
@@ -293,8 +293,18 @@ echo -e "${GREEN}Claude Code installed${NC}"
 PROJECT_DIR="/projects/${PROJECT_NAME}"
 
 echo -e "\n${BLUE}Running Claude on issue: ${ISSUE_REF}${NC}"
+echo -e "  Timeout: ${CLAUDE_TIMEOUT}s"
 
-echo "Resolve this GitHub issue: ${ISSUE_REF}" | \
+CLAUDE_OUTPUT_FORMAT="text"
+if [ ${DEBUG} -eq 1 ]; then
+  CLAUDE_OUTPUT_FORMAT="stream-json"
+fi
+
+# Create a temporary file for Claude's PID
+CLAUDE_PID_FILE=$(mktemp)
+
+# Run Claude in background and capture its PID
+(echo "Resolve this GitHub issue: ${ISSUE_REF}" | \
   oc exec -n ${DEVWORKSPACE_NS} ${podName} -c ${mainContainerName} \
   -i -- bash -c "
 export PATH=\"\$HOME/.local/bin:\$PATH\"
@@ -305,11 +315,63 @@ if [ -z \"\${GITHUB_TOKEN:-}\" ] && [ -f /.git-credentials/credentials ]; then
 fi
 cd ${PROJECT_DIR}
 gh auth setup-git 2>/dev/null || true
-\$HOME/.local/bin/claude -p --verbose --allowedTools 'Bash(*),Read(*),Write(*),Edit(*)'
-"
-CLAUDE_EXIT=$?
+\$HOME/.local/bin/claude -p --verbose --output-format ${CLAUDE_OUTPUT_FORMAT} --allowedTools 'Bash(*),Read(*),Write(*),Edit(*)'
+" | if [ "${CLAUDE_OUTPUT_FORMAT}" = "stream-json" ]; then
+  while IFS= read -r line; do
+    type=$(echo "${line}" | jq -r '.type // empty' 2>/dev/null)
+    case "${type}" in
+      assistant)
+        content=$(echo "${line}" | jq -r '(.message.content[]? | if .type == "text" then .text elif .type == "tool_use" then "⚙ Tool: \(.name) \(.input | tostring | .[0:200])" else empty end) // empty' 2>/dev/null)
+        [ -n "${content}" ] && echo -e "${BLUE}Claude:${NC} ${content}"
+        ;;
+      result)
+        result=$(echo "${line}" | jq -r '.result // empty' 2>/dev/null)
+        cost=$(echo "${line}" | jq -r '.cost_usd // empty' 2>/dev/null)
+        [ -n "${result}" ] && echo -e "\n${GREEN}Result:${NC} ${result}"
+        [ -n "${cost}" ] && echo -e "${PURPLE}Cost:${NC} \$${cost}"
+        ;;
+    esac
+  done
+else
+  cat
+fi) &
 
-if [ ${CLAUDE_EXIT} -eq 0 ]; then
+CLAUDE_PID=$!
+echo ${CLAUDE_PID} > ${CLAUDE_PID_FILE}
+
+# Wait for Claude with timeout
+CLAUDE_EXIT=0
+CLAUDE_TIMEOUT_REACHED=0
+CLAUDE_ELAPSED=0
+log "  Claude process started (PID: ${CLAUDE_PID})"
+
+while kill -0 ${CLAUDE_PID} 2>/dev/null; do
+  if [ ${CLAUDE_ELAPSED} -ge ${CLAUDE_TIMEOUT} ]; then
+    echo -e "\n${RED}Claude timeout reached (${CLAUDE_TIMEOUT}s)${NC}"
+    echo -e "${YELLOW}Terminating Claude process...${NC}"
+    kill ${CLAUDE_PID} 2>/dev/null || true
+    sleep 2
+    kill -9 ${CLAUDE_PID} 2>/dev/null || true
+    CLAUDE_TIMEOUT_REACHED=1
+    CLAUDE_EXIT=124
+    break
+  fi
+  sleep 2
+  CLAUDE_ELAPSED=$((CLAUDE_ELAPSED + 2))
+  [ $((CLAUDE_ELAPSED % 60)) -eq 0 ] && log "  [Claude running: ${CLAUDE_ELAPSED}s / ${CLAUDE_TIMEOUT}s]"
+done
+
+# Get actual exit code if process finished naturally
+if [ ${CLAUDE_TIMEOUT_REACHED} -eq 0 ]; then
+  wait ${CLAUDE_PID}
+  CLAUDE_EXIT=$?
+fi
+
+rm -f ${CLAUDE_PID_FILE}
+
+if [ ${CLAUDE_TIMEOUT_REACHED} -eq 1 ]; then
+  echo -e "\n${RED}Claude terminated due to timeout${NC}"
+elif [ ${CLAUDE_EXIT} -eq 0 ]; then
   echo -e "\n${GREEN}Claude completed successfully${NC}"
 else
   echo -e "\n${RED}Claude failed (exit code: ${CLAUDE_EXIT})${NC}"
@@ -317,11 +379,11 @@ fi
 
 # ── Cleanup ──
 
+rm -f ${TMP_DEVWORKSPACE}
 echo -e "\n${BLUE}Cleaning up workspace...${NC}"
 eval "oc delete dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} ${QUIET}" && \
   echo -e "${GREEN}Workspace deleted${NC}" || \
   echo -e "${YELLOW}Warning: failed to delete workspace${NC}"
-rm -f ${TMP_DEVWORKSPACE}
 
 # ── Summary ──
 
