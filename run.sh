@@ -26,8 +26,9 @@ while getopts "vdh" o; do
       echo "  -h  Show this help"
       echo ""
       echo "Environment variables:"
-      echo "  SKILL_SOURCE  Where to read the skill from: target_project | dw_claude_runner"
-      echo "  SKILL_PATH    Path to skill file (default: .claude/skill.md)"
+      echo "  ISSUE_REF     GitHub issue URL (required)"
+      echo "  PROJECT_URL   Git URL of the project to clone"
+      echo "  TARGET_REPO   GitHub repo (owner/name)"
       exit 0
       ;;
     \?) echo "Invalid option: -$OPTARG"; exit 1 ;;
@@ -127,8 +128,8 @@ if [ -z "${TARGET_REPO}" ]; then
   echo -e "${RED}TARGET_REPO is not set${NC}"
   exit 1
 fi
-if [ -z "${SKILL_PATH}" ]; then
-  echo -e "${RED}SKILL_PATH is not set${NC}"
+if [ -z "${ISSUE_REF:-}" ]; then
+  echo -e "${RED}ISSUE_REF is not set (provide a GitHub issue URL)${NC}"
   exit 1
 fi
 
@@ -136,7 +137,7 @@ echo -e "\n${BLUE}Configuration:${NC}"
 echo -e "  Workspace:  ${DEVWORKSPACE_NAME}"
 echo -e "  Image:      ${CONTAINER_IMAGE}"
 echo -e "  Project:    ${PROJECT_NAME}"
-echo -e "  Skill:      ${SKILL_PATH} (source: ${SKILL_SOURCE})"
+echo -e "  Issue:      ${ISSUE_REF}"
 echo -e "  Target:     ${TARGET_REPO}"
 
 # ── Create DevWorkspace ──
@@ -287,42 +288,14 @@ if [ ${INSTALL_EXIT} -ne 0 ]; then
 fi
 echo -e "${GREEN}Claude Code installed${NC}"
 
-# ── Resolve skill ──
+# ── Run Claude on issue ──
 
 PROJECT_DIR="/projects/${PROJECT_NAME}"
 
-if [ "${SKILL_SOURCE}" == "target_project" ]; then
-  SKILL_FILE="${PROJECT_DIR}/${SKILL_PATH}"
-  echo -e "\n${BLUE}Running skill: ${SKILL_PATH} (from target project)${NC}"
-  SKILL_CONTENT=$(oc exec -n ${DEVWORKSPACE_NS} ${podName} -c ${mainContainerName} -- cat "${SKILL_FILE}" 2>/dev/null)
-  if [ $? -ne 0 ]; then
-    echo -e "${RED}Skill not found in project: ${SKILL_FILE}${NC}"
-    eval "oc delete dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} ${QUIET}"
-    rm -f ${TMP_DEVWORKSPACE}
-    exit 1
-  fi
-elif [ "${SKILL_SOURCE}" == "dw_claude_runner" ]; then
-  echo -e "\n${BLUE}Running skill: ${SKILL_PATH} (from dw-claude-runner skills/)${NC}"
-  if [ ! -f "skills/${SKILL_PATH}" ]; then
-    echo -e "${RED}Skill not found locally: skills/${SKILL_PATH}${NC}"
-    eval "oc delete dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} ${QUIET}"
-    rm -f ${TMP_DEVWORKSPACE}
-    exit 1
-  fi
-  SKILL_CONTENT=$(cat "skills/${SKILL_PATH}")
-else
-  echo -e "${RED}Invalid SKILL_SOURCE: ${SKILL_SOURCE} (expected: target_project or dw_claude_runner)${NC}"
-  eval "oc delete dw -n ${DEVWORKSPACE_NS} ${DEVWORKSPACE_NAME} ${QUIET}"
-  rm -f ${TMP_DEVWORKSPACE}
-  exit 1
-fi
+echo -e "\n${BLUE}Running Claude on issue: ${ISSUE_REF}${NC}"
 
-SKILL_CONTENT="${SKILL_CONTENT//TARGET_REPO/${TARGET_REPO}}"
-SKILL_CONTENT="${SKILL_CONTENT//ISSUE_REF/${ISSUE_REF:-}}"
-
-# ── Run skill ──
-
-echo "${SKILL_CONTENT}" | oc exec -n ${DEVWORKSPACE_NS} ${podName} -c ${mainContainerName} \
+echo "Resolve this GitHub issue: ${ISSUE_REF}" | \
+  oc exec -n ${DEVWORKSPACE_NS} ${podName} -c ${mainContainerName} \
   -i -- bash -c "
 export PATH=\"\$HOME/.local/bin:\$PATH\"
 if [ -z \"\${GITHUB_TOKEN:-}\" ] && [ -f /.git-credentials/credentials ]; then
@@ -334,12 +307,12 @@ cd ${PROJECT_DIR}
 gh auth setup-git 2>/dev/null || true
 \$HOME/.local/bin/claude -p --verbose --allowedTools 'Bash(*),Read(*),Write(*),Edit(*)'
 "
-SKILL_EXIT=$?
+CLAUDE_EXIT=$?
 
-if [ ${SKILL_EXIT} -eq 0 ]; then
-  echo -e "\n${GREEN}Skill completed successfully${NC}"
+if [ ${CLAUDE_EXIT} -eq 0 ]; then
+  echo -e "\n${GREEN}Claude completed successfully${NC}"
 else
-  echo -e "\n${RED}Skill failed (exit code: ${SKILL_EXIT})${NC}"
+  echo -e "\n${RED}Claude failed (exit code: ${CLAUDE_EXIT})${NC}"
 fi
 
 # ── Cleanup ──
@@ -359,9 +332,9 @@ ELAPSED_SEC=$((ELAPSED_TIME % 60))
 echo ""
 echo "======================"
 echo "Summary:"
-echo -e "  Skill:   ${BLUE}${SKILL_PATH}${NC}"
-echo -e "  Result:  $([ ${SKILL_EXIT} -eq 0 ] && echo -e "${GREEN}SUCCESS${NC}" || echo -e "${RED}FAILED${NC}")"
+echo -e "  Issue:   ${BLUE}${ISSUE_REF}${NC}"
+echo -e "  Result:  $([ ${CLAUDE_EXIT} -eq 0 ] && echo -e "${GREEN}SUCCESS${NC}" || echo -e "${RED}FAILED${NC}")"
 echo -e "  Time:    ${PURPLE}${ELAPSED_MIN}m ${ELAPSED_SEC}s${NC}"
 echo "======================"
 
-exit ${SKILL_EXIT}
+exit ${CLAUDE_EXIT}
