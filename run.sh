@@ -26,7 +26,8 @@ while getopts "vdh" o; do
       echo "  -h  Show this help"
       echo ""
       echo "Environment variables:"
-      echo "  ISSUE_REF     GitHub issue URL (required)"
+      echo "  PROMPT        Custom prompt for Claude (overrides ISSUE_REF default)"
+      echo "  ISSUE_REF     GitHub issue URL (used in default prompt)"
       echo "  PROJECT_URL   Git URL of the project to clone"
       echo "  TARGET_REPO   GitHub repo (owner/name)"
       exit 0
@@ -128,8 +129,8 @@ if [ -z "${TARGET_REPO}" ]; then
   echo -e "${RED}TARGET_REPO is not set${NC}"
   exit 1
 fi
-if [ -z "${ISSUE_REF:-}" ]; then
-  echo -e "${RED}ISSUE_REF is not set (provide a GitHub issue URL)${NC}"
+if [ -z "${PROMPT:-}" ]; then
+  echo -e "${RED}PROMPT is empty (set PROMPT or ISSUE_REF)${NC}"
   exit 1
 fi
 
@@ -137,7 +138,7 @@ echo -e "\n${BLUE}Configuration:${NC}"
 echo -e "  Workspace:  ${DEVWORKSPACE_NAME}"
 echo -e "  Image:      ${CONTAINER_IMAGE}"
 echo -e "  Project:    ${PROJECT_NAME}"
-echo -e "  Issue:      ${ISSUE_REF}"
+echo -e "  Prompt:     ${PROMPT}"
 echo -e "  Target:     ${TARGET_REPO}"
 
 # ── Create DevWorkspace ──
@@ -316,7 +317,7 @@ echo -e "${GREEN}Claude Code installed${NC}"
 
 PROJECT_DIR="/projects/${PROJECT_NAME}"
 
-echo -e "\n${BLUE}Running Claude on issue: ${ISSUE_REF}${NC}"
+echo -e "\n${BLUE}Running Claude with prompt: ${PROMPT}${NC}"
 echo -e "  Timeout: ${CLAUDE_TIMEOUT}s"
 
 CLAUDE_OUTPUT_FORMAT="text"
@@ -328,7 +329,7 @@ fi
 CLAUDE_PID_FILE=$(mktemp)
 
 # Run Claude in background and capture its PID
-(echo "Resolve this GitHub issue: ${ISSUE_REF}" | \
+(echo "${PROMPT}" | \
   oc exec -n ${DEVWORKSPACE_NS} ${podName} -c ${mainContainerName} \
   -i -- bash -c "
 export PATH=\"\$HOME/.local/bin:\$PATH\"
@@ -418,7 +419,7 @@ ELAPSED_SEC=$((ELAPSED_TIME % 60))
 echo ""
 echo "======================"
 echo "Summary:"
-echo -e "  Issue:   ${BLUE}${ISSUE_REF}${NC}"
+echo -e "  Prompt:  ${BLUE}${PROMPT}${NC}"
 echo -e "  Result:  $([ ${CLAUDE_EXIT} -eq 0 ] && echo -e "${GREEN}SUCCESS${NC}" || echo -e "${RED}FAILED${NC}")"
 echo -e "  Time:    ${PURPLE}${ELAPSED_MIN}m ${ELAPSED_SEC}s${NC}"
 echo "======================"
