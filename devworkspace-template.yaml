@@ -16,10 +16,10 @@ spec:
         container:
           image: CONTAINER_IMAGE
           args: ['tail', '-f', '/dev/null']
-          memoryLimit: 8Gi
+          memoryLimit: 12Gi
           memoryRequest: 512Mi
           cpuRequest: 500m
-          cpuLimit: 2000m
+          cpuLimit: 3500m
         attributes:
           controller.devfile.io/merge-contribution: true
     projects:
