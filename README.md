@@ -48,6 +48,7 @@ Edit `settings/settings.env` to customize defaults, or override via environment 
 | `PROJECT_URL` | `https://github.com/RomanNikitenko/web-nodejs-sample.git` | Project to clone |
 | `EDITOR_DEFINITION` | che-code-insiders | Editor definition URL |
 | `CLAUDE_VERSION` | `2.1.92` | Claude Code version to install |
+| `CLAUDE_MODEL` | `claude-opus-4-6` | Claude model (`claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`) |
 | `TARGET_REPO` | `RomanNikitenko/web-nodejs-sample` | GitHub repo (owner/name) |
 
 ## Project Configuration

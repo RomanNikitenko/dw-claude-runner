@@ -138,6 +138,7 @@ echo -e "\n${BLUE}Configuration:${NC}"
 echo -e "  Workspace:  ${DEVWORKSPACE_NAME}"
 echo -e "  Image:      ${CONTAINER_IMAGE}"
 echo -e "  Project:    ${PROJECT_NAME}"
+echo -e "  Model:      ${CLAUDE_MODEL}"
 echo -e "  Prompt:     ${PROMPT}"
 echo -e "  Target:     ${TARGET_REPO}"
 
@@ -340,7 +341,7 @@ if [ -z \"\${GITHUB_TOKEN:-}\" ] && [ -f /.git-credentials/credentials ]; then
 fi
 cd ${PROJECT_DIR}
 gh auth setup-git 2>/dev/null || true
-\$HOME/.local/bin/claude -p --verbose --output-format ${CLAUDE_OUTPUT_FORMAT} --allowedTools 'Bash(*),Read(*),Write(*),Edit(*)'
+\$HOME/.local/bin/claude -p --model ${CLAUDE_MODEL} --verbose --output-format ${CLAUDE_OUTPUT_FORMAT} --allowedTools 'Bash(*),Read(*),Write(*),Edit(*)'
 " | if [ "${CLAUDE_OUTPUT_FORMAT}" = "stream-json" ]; then
   while IFS= read -r line; do
     type=$(echo "${line}" | jq -r '.type // empty' 2>/dev/null)
